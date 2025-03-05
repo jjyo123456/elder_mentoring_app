@@ -1,9 +1,8 @@
 package com.example.elderprojectfinal
-import android.app.Application
 import android.content.Context
 import org.webrtc.*
 import android.os.Bundle
-import android.os.Handler
+import android.provider.Settings.Global
 import android.view.View
 import android.widget.Button
 import androidx.activity.enableEdgeToEdge
@@ -13,11 +12,19 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import com.example.elderprojectfinal.data_classes_for_handelling_gemini_response.geminiresponse
 import com.example.elderprojectfinal.databinding.ActivityTheMainWorkoutMatchBinding
+import com.example.elderprojectfinal.databinding.MatchedUserProfileLayoutBinding
 import com.google.android.gms.common.api.internal.ApiKey
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.ChildEventListener
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.toObjects
 import com.google.firebase.firestore.toObjects
+import com.google.firebase.platforminfo.GlobalLibraryVersionRegistrar
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,18 +50,24 @@ import org.webrtc.PeerConnection.IceServer
 import javax.microedition.khronos.egl.EGLContext
 
 
-class the_main_workout_match_activity : AppCompatActivity() {
+
 
 
 
 
     val firestore:FirebaseFirestore = FirebaseFirestore.getInstance()
 
+    val database = FirebaseDatabase.getInstance()
+
     val apiKey:String = "AIzaSyDJW69wH1BqmlnSu7XoK9Avhp5v8q_PuE4"
 
     var url:String = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?"
 
-    public var main_video_call_button:Button = findViewById(R.id.main_video_call_button)
+    public lateinit var binding:ActivityTheMainWorkoutMatchBinding
+
+    public lateinit var matchedUserProfileLayoutBinding:MatchedUserProfileLayoutBinding
+
+
 
     private lateinit var peerConnectionFactory: PeerConnectionFactory
     private lateinit var peerConnection: PeerConnection
@@ -62,9 +75,13 @@ class the_main_workout_match_activity : AppCompatActivity() {
     private lateinit var remoteVideoTrack: VideoTrack
     private lateinit var videoCapturer: VideoCapturer
 
-    private var context:Context =
+    lateinit var current_user_id:String
+    lateinit var  match_id:String
+
+    lateinit var roomid_global_varriable:String
 
 
+class the_main_workout_match_activity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,9 +93,15 @@ class the_main_workout_match_activity : AppCompatActivity() {
             insets
         }
 
-        var binding:ActivityTheMainWorkoutMatchBinding = ActivityTheMainWorkoutMatchBinding.inflate(layoutInflater)
+        binding = ActivityTheMainWorkoutMatchBinding.inflate(layoutInflater)
 
-        main_video_call_button.visibility = View.GONE
+        matchedUserProfileLayoutBinding = MatchedUserProfileLayoutBinding.inflate(layoutInflater)
+
+        matchedUserProfileLayoutBinding.mainVideoCallButton.visibility = View.GONE
+
+        GlobalScope.launch {
+            setupwebrtc(applicationContext)
+        }
 
 
         binding.button5.setOnClickListener({
@@ -96,7 +119,7 @@ class the_main_workout_match_activity : AppCompatActivity() {
         var firebaseauth:FirebaseAuth = FirebaseAuth.getInstance()
 
         var user_collection = firestore.collection("users")
-        var current_user_id:String = firebaseauth.currentUser.toString()
+        current_user_id = firebaseauth.currentUser.toString()
 
 
 
@@ -121,7 +144,7 @@ class the_main_workout_match_activity : AppCompatActivity() {
             .get()
                 .addOnSuccessListener {document_of_match ->
                     val match = document_of_match.documents[0]
-                    val match_id = match.id
+                  match_id = match.id
 
                    save_match(current_user_id , match_id){save_match_result ->
 
@@ -286,9 +309,13 @@ class the_main_workout_match_activity : AppCompatActivity() {
                    val minute = calendar.get(Calendar.MINUTE)
 
                    if(day == best_day && ){
-                       main_video_call_button.visibility = View.VISIBLE
+                       matchedUserProfileLayoutBinding.mainVideoCallButton.visibility = View.VISIBLE
+                       matchedUserProfileLayoutBinding.mainVideoCallButton.setOnClickListener({
+
+                       })
                    }
                }
+
 
 
 
@@ -333,7 +360,7 @@ class the_main_workout_match_activity : AppCompatActivity() {
                     }
 
                     override fun onIceCandidate(p0: IceCandidate?) {
-                        send(p0)
+
                     }
 
                     override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {
@@ -363,9 +390,145 @@ class the_main_workout_match_activity : AppCompatActivity() {
         )
     }
 
-public fun seticecandidate(){
 
-}
+
+
+          public fun joincall(){
+              getroomidforuser(current_user_id) { roomid ->
+                  if(roomid != null){
+                      roomid_global_varriable = roomid
+                      GlobalScope.launch {
+                          if()
+                      }
+                      GlobalScope.launch {
+                          setupfirebaselistener(roomid)
+                      }
+                  }
+
+              }
+          }
+
+
+
+    public fun getroomidforuser(userid: String, callback: (String) -> Unit) {
+        val dbref = database.reference.child("matched_users")
+        dbref.child(userid).get().addOnSuccessListener {
+            callback(it.value.toString())
+        }
+
+    }
+
+
+
+
+
+
+    public fun setupfirebaselistener(roomid:String,userid: String){
+        val dbref = database.reference.child("calls").child(roomid)
+        dbref.child("offer").child(userid).addValueEventListener(object : ValueEventListener, ChildEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+
+            }
+
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val offer = snapshot.getValue(SessionDescription::class.java)
+
+                offer?.let {
+                    peerConnection.setRemoteDescription(Sdpobserverimpl(),it)
+                    createAnswer(roomid)
+                }
+            }
+
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                TODO("Not yet implemented")
+            }
+
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                TODO("Not yet implemented")
+            }
+
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
+                TODO("Not yet implemented")
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+
+            }
+
+        })
+        dbref.child("answer").child(current_user_id).addValueEventListener(object  :
+            ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val answer = snapshot.getValue(SessionDescription::class.java)
+                answer?.let{
+                 peerConnection.setRemoteDescription(Sdpobserverimpl(),it)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                TODO("Not yet implemented")
+            }
+
+        })
+        dbref.child("iceCandidates").addChildEventListener(object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val candidate = snapshot.getValue(IceCandidate::class.java)
+                candidate?.let { peerConnection?.addIceCandidate(it) }
+            }
+
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onChildRemoved(snapshot: DataSnapshot) {}
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+
+
+
+    public fun createAnswer(roomId:String){
+
+            val sdpConstraints = MediaConstraints()
+            peerConnection?.createAnswer(object : SdpObserver {
+                override fun onCreateSuccess(sessionDescription: SessionDescription) {
+                    peerConnection?.setLocalDescription(Sdpobserverimpl(), sessionDescription)
+                    sendAnswerToFirebase(roomId, sessionDescription)
+                }
+
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(error: String?) {}
+                override fun onSetFailure(error: String?) {}
+            }, sdpConstraints)
+    }
+
+    private fun sendAnswerToFirebase(roomId: String, answer: SessionDescription) {
+        val dbRef = database.reference.child("calls").child(roomId)
+        dbRef.child("answer").child(match_id).child(current_user_id).setValue(mapOf("type" to answer.type.canonicalForm(), "sdp" to answer.description))
+    }
+
+
+
+
+
+
+    public fun createOffer(roomId: String) {
+        val sdpConstraints = MediaConstraints()
+        peerConnection?.createOffer(object : SdpObserver {
+            override fun onCreateSuccess(sessionDescription: SessionDescription) {
+                peerConnection?.setLocalDescription(Sdpobserverimpl(), sessionDescription)
+                sendOfferToFirebase(roomId, sessionDescription)
+            }
+
+            override fun onSetSuccess() {}
+            override fun onCreateFailure(error: String?) {}
+            override fun onSetFailure(error: String?) {}
+        }, sdpConstraints)
+    }
+
+    private fun sendOfferToFirebase(roomId: String, offer: SessionDescription) {
+        val dbRef = database.reference.child("calls").child(roomId)
+        dbRef.child("offer").child(match_id).setValue(mapOf("type" to offer.type.canonicalForm(), "sdp" to offer.description))
+    }
 
 
 

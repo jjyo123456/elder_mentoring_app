@@ -73,6 +73,8 @@ dependencies {
 
     implementation ("com.mesibo.api:calls:2.7.18+")
 
+    implementation ("com.google.firebase:firebase-database:20.0.2")
+
 
 
 }
